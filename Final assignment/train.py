@@ -19,6 +19,7 @@ import wandb
 import torch
 import torch.nn as nn
 from torch.optim import AdamW
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torchvision.datasets import Cityscapes
 from torchvision.utils import make_grid
@@ -148,7 +149,26 @@ def main(args):
     criterion = nn.CrossEntropyLoss(ignore_index=255)  # Ignore the void class
 
     # Define the optimizer
-    optimizer = AdamW(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.AdamW([
+    {"params": model.encoder.parameters(), "lr": 1e-4},
+    {"params": list(model.proj.parameters()) + 
+               list(model.up1.parameters()) +
+               list(model.up2.parameters()) +
+               list(model.up3.parameters()) +
+               list(model.up4.parameters()) +
+               list(model.outc.parameters()),
+     "lr": 1e-4}
+])
+
+    # Define a learning rate scheduler
+    scheduler = ReduceLROnPlateau(
+        optimizer,
+        mode="min",
+        factor=0.5,
+        patience=8,
+        verbose=True,
+        min_lr=1e-6
+    )
 
     # Training loop
     best_valid_loss = float('inf')
@@ -216,6 +236,9 @@ def main(args):
             wandb.log({
                 "valid_loss": valid_loss
             }, step=(epoch + 1) * len(train_dataloader) - 1)
+
+            # Reduce learning rate if validation loss has plateaued
+            scheduler.step(valid_loss)
 
             if valid_loss < best_valid_loss:
                 best_valid_loss = valid_loss
