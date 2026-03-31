@@ -21,6 +21,8 @@ RUN pip install --no-cache-dir \
     torch torchvision --index-url https://download.pytorch.org/whl/cu126
 RUN pip install --no-cache-dir \
     pillow
+RUN pip install --no-cache-dir \
+    timm
 
 WORKDIR /app
 COPY predict.py /app/predict.py
