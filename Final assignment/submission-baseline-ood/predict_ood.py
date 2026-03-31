@@ -40,7 +40,7 @@ def preprocess(img: Image.Image) -> torch.Tensor:
     # For example, resizing, normalization, etc.
     # Return a tensor suitable for model input
     transform = Compose([
-        ToImage(),
+        ToImage(mode="RGB"),
         Resize(size=(256, 256), interpolation=InterpolationMode.BILINEAR),
         ToDtype(dtype=torch.float32, scale=True),
         Normalize(mean=(0.5,), std=(0.5,)),
