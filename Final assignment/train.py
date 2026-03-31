@@ -150,7 +150,7 @@ def main(args):
 
     # Define the optimizer
     optimizer = torch.optim.AdamW([
-    {"params": model.encoder.parameters(), "lr": 1e-4},
+    {"params": model.encoder.parameters(), "lr": 1e-3},
     {"params": list(model.proj.parameters()) + 
                list(model.up1.parameters()) +
                list(model.up2.parameters()) +

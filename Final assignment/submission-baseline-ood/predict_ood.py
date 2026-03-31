@@ -40,12 +40,12 @@ def preprocess(img: Image.Image) -> torch.Tensor:
     # For example, resizing, normalization, etc.
     # Return a tensor suitable for model input
     transform = Compose([
-        ToImage(mode="RGB"),
+        ToImage(),
         Resize(size=(256, 256), interpolation=InterpolationMode.BILINEAR),
         ToDtype(dtype=torch.float32, scale=True),
         Normalize(mean=(0.5,), std=(0.5,)),
     ])
-
+    img = img.convert("RGB")  # Ensure image is in RGB format
     img = transform(img)
     img = img.unsqueeze(0)  # Add batch dimension
     return img
