@@ -41,7 +41,7 @@ class Model(nn.Module):
         self.up4 = (Up(128, 64))
         self.outc = (OutConv(64, n_classes))
 
-    def detect_ood(self, logits, threshold=0.7, temperature=2.0):
+    def detect_ood(self, logits, threshold=0.6, temperature=2.0):
 
         probs = torch.softmax(logits / temperature, dim=1) # [B, C, H, W]
         max_probs = probs.max(dim=1)[0] # [B, H, W]
