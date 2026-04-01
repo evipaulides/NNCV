@@ -41,12 +41,17 @@ class Model(nn.Module):
         self.up4 = (Up(128, 64))
         self.outc = (OutConv(64, n_classes))
 
-    def detect_ood(self, logits, threshold=0.7):
+    def detect_ood(self, logits, threshold=0.5, temperature=2.0):
 
-        probs = torch.softmax(logits, dim=1) # [B, C, H, W]
+        probs = torch.softmax(logits / temperature, dim=1) # [B, C, H, W]
         max_probs = probs.max(dim=1)[0] # [B, H, W]
 
-        image_confidence = max_probs.mean(dim=[1, 2]) # [B]
+        flat = max_probs.view(max_probs.shape[0], -1)
+        
+        k = max(1, int(0.1 * flat.shape[1]))  # lowest 10%
+        lowest_vals, _ = torch.topk(flat, k, largest=False)
+
+        image_confidence = lowest_vals.mean(dim=1)
 
         # 1 = ID image, 0 = OOD image
         include = image_confidence >= threshold
