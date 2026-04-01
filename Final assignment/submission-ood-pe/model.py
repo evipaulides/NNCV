@@ -41,14 +41,22 @@ class Model(nn.Module):
         self.up4 = (Up(128, 64))
         self.outc = (OutConv(64, n_classes))
 
-    def detect_ood(self, logits, threshold=0.8):
+    def detect_ood_entropy(self, logits, threshold=1.7, top_percent=10, temperature=2.0):
+        # Softmax with temperature
+        probs = torch.softmax(logits / temperature, dim=1)  # [B, C, H, W]
 
-        probs = torch.softmax(logits, dim=1) # [B, C, H, W]
         # Pixelwise entropy
         pixel_entropy = -(probs * torch.log(probs + 1e-8)).sum(dim=1)  # [B,H,W]
 
-        # Average over all pixels -> your formula
-        image_entropy = pixel_entropy.mean(dim=(1, 2))  # [B]
+        # Flatten pixels
+        flat_entropy = pixel_entropy.view(pixel_entropy.shape[0], -1)
+
+        # Take top X% highest entropy pixels
+        k = max(1, int(top_percent / 100 * flat_entropy.shape[1]))
+        top_entropy_vals, _ = torch.topk(flat_entropy, k, largest=True)
+
+        # Image-level score
+        image_entropy = top_entropy_vals.mean(dim=1)
 
         # low entropy = ID, high entropy = OOD
         include = image_entropy <= threshold
@@ -80,7 +88,7 @@ class Model(nn.Module):
         x = self.up4(x, x1)
         logits = self.outc(x)
 
-        include = self.detect_ood(logits, threshold=0.8)
+        include = self.detect_ood_entropy(logits, threshold=1.7, top_percent=10, temperature=2.0)
         return logits, bool(include.item()) # Return the segmentation logits and a boolean indicating that the image is in-distribution (not OOD)
         
 
