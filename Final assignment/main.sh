@@ -8,4 +8,4 @@ python3 train.py \
     --epochs 200 \
     --num-workers 10 \
     --seed 42 \
-    --experiment-id "dinov2-optimization-training" \
+    --experiment-id "unet-dice-loss" \
