@@ -1,154 +1,126 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import timm
 
 
-# -----------------------------
-# Normalization helper
-# -----------------------------
-def norm_layer(channels):
-    return nn.GroupNorm(32, channels)
+class Model(nn.Module):
+    """ 
+    A simple U-Net architecture for image segmentation.
+    Based on the U-Net architecture from the original paper:
+    Olaf Ronneberger et al. (2015), "U-Net: Convolutional Networks for Biomedical Image Segmentation"
+    https://arxiv.org/pdf/1505.04597.pdf
 
-
-# -----------------------------
-# ASPP (DeepLab-style context)
-# -----------------------------
-class ASPP(nn.Module):
-    def __init__(self, in_channels, out_channels=256, rates=(1, 6, 12, 18)):
+    Adapt this model as needed for your problem-specific requirements. You can make multiple model classes and compare them,
+    however, the CodaLab server requires the model class to be named "Model". Also, it will use the default values of the constructor
+    to create the model, so make sure to set the default values of the constructor to the ones you want to use for your submission.
+    """
+    def __init__(
+        self, 
+        in_channels=3, 
+        n_classes=19
+    ):
+        """
+        Args:
+            in_channels (int): Number of input channels. Default is 3 for RGB images.
+            n_classes (int): Number of output classes. Default is 19 for the Cityscapes dataset.
+        """
+        
         super().__init__()
 
-        self.blocks = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv2d(in_channels, out_channels, 1, bias=False),
-                norm_layer(out_channels),
-                nn.GELU()
-            )
-        ])
+        # Encoding path
+        self.in_channels = in_channels
+        self.inc = (DoubleConv(in_channels, 64))
+        self.down1 = (Down(64, 128))
+        self.down2 = (Down(128, 256))
+        self.down3 = (Down(256, 512))
+        self.down4 = (Down(512, 512))
 
-        for r in rates[1:]:
-            self.blocks.append(
-                nn.Sequential(
-                    nn.Conv2d(in_channels, out_channels, 3, padding=r, dilation=r, bias=False),
-                    norm_layer(out_channels),
-                    nn.GELU()
-                )
-            )
+        # Decoding path
+        self.up1 = (Up(1024, 256))
+        self.up2 = (Up(512, 128))
+        self.up3 = (Up(256, 64))
+        self.up4 = (Up(128, 64))
+        self.outc = (OutConv(64, n_classes))
 
-        self.project = nn.Sequential(
-            nn.Conv2d(len(rates) * out_channels, out_channels, 1, bias=False),
-            norm_layer(out_channels),
-            nn.GELU()
+    def forward(self, x):
+        """
+        Forward pass through the model.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape (batch_size, in_channels, height, width).
+        """
+        # Check if the input tensor has the expected number of channels
+        if x.shape[1] != self.in_channels:
+            raise ValueError(f"Expected {self.in_channels} input channels, but got {x.shape[1]}")
+        
+        # Encoding path
+        x1 = self.inc(x)
+        x2 = self.down1(x1)
+        x3 = self.down2(x2)
+        x4 = self.down3(x3)
+        x5 = self.down4(x4)
+
+        # Decoding path
+        x = self.up1(x5, x4)
+        x = self.up2(x, x3)
+        x = self.up3(x, x2)
+        x = self.up4(x, x1)
+        logits = self.outc(x)
+
+        return logits
+        
+
+class DoubleConv(nn.Module):
+    """(convolution => [BN] => ReLU) * 2"""
+
+    def __init__(self, in_channels, out_channels, mid_channels=None):
+        super().__init__()
+        if not mid_channels:
+            mid_channels = out_channels
+        self.double_conv = nn.Sequential(
+            nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(mid_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
         )
 
     def forward(self, x):
-        feats = [b(x) for b in self.blocks]
-        x = torch.cat(feats, dim=1)
-        return self.project(x)
+        return self.double_conv(x)
 
 
-# -----------------------------
-# Main Model
-# -----------------------------
-class DINOv2SegModel(nn.Module):
-    def __init__(self, n_classes=19, freeze_encoder=False):
+class Down(nn.Module):
+    """Downscaling with maxpool then double conv"""
+
+    def __init__(self, in_channels, out_channels):
         super().__init__()
-
-        self.patch_size = 16
-
-        # -----------------------------
-        # Backbone (DINOv2 ViT-B)
-        # -----------------------------
-        self.encoder = timm.create_model(
-            "vit_base_patch16_224.dino",
-            pretrained=True,
-            features_only=True,
-            out_indices=(0, 1, 2, 3),  # get all 4 feature maps
-            img_size=(256, 512)  # must match your input size
+        self.maxpool_conv = nn.Sequential(
+            nn.MaxPool2d(2),
+            DoubleConv(in_channels, out_channels)
         )
-
-        if freeze_encoder:
-            for p in self.encoder.parameters():
-                p.requires_grad = False
-
-        encoder_channels = self.encoder.feature_info.channels()
-
-        # -----------------------------
-        # Projection layers (unify dims)
-        # -----------------------------
-        self.proj = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv2d(c, 256, 1, bias=False),
-                norm_layer(256),
-                nn.GELU()
-            )
-            for c in encoder_channels
-        ])
-
-        # -----------------------------
-        # Feature fusion
-        # -----------------------------
-        self.fuse = nn.Sequential(
-            nn.Conv2d(256 * 4, 512, 3, padding=1, bias=False),
-            norm_layer(512),
-            nn.GELU(),
-            nn.Conv2d(512, 256, 3, padding=1, bias=False),
-            norm_layer(256),
-            nn.GELU()
-        )
-
-        # -----------------------------
-        # ASPP context module
-        # -----------------------------
-        self.aspp = ASPP(256, 256)
-
-        # -----------------------------
-        # Final segmentation head
-        # -----------------------------
-        self.head = nn.Conv2d(256, n_classes, 1)
-
-        # -----------------------------
-        # Auxiliary head (for training stability)
-        # -----------------------------
-        self.aux_head = nn.Conv2d(256, n_classes, 1)
 
     def forward(self, x):
-        B, C, H, W = x.shape
+        return self.maxpool_conv(x)
 
-        if H % self.patch_size != 0 or W % self.patch_size != 0:
-            raise ValueError(f"Input size must be divisible by {self.patch_size}, got {(H, W)}")
 
-        # -----------------------------
-        # Encoder features
-        # -----------------------------
-        feats = self.encoder(x)  # list of 4 tensors (same spatial size)
+class Up(nn.Module):
+    """Upscaling then double conv"""
 
-        # Project all to 256 channels
-        feats = [proj(f) for proj, f in zip(self.proj, feats)]
+    def __init__(self, in_channels, out_channels, bilinear=True):
+        super().__init__()
+        self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        self.conv = DoubleConv(in_channels, out_channels, in_channels // 2)
+        
+    def forward(self, x1, x2):
+        x1 = self.up(x1)
+        x = torch.cat([x2, x1], dim=1)
+        return self.conv(x)
 
-        # -----------------------------
-        # Feature fusion
-        # -----------------------------
-        x_fused = torch.cat(feats, dim=1)
-        x_fused = self.fuse(x_fused)
 
-        # -----------------------------
-        # ASPP context
-        # -----------------------------
-        x_aspp = self.aspp(x_fused)
+class OutConv(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(OutConv, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
 
-        # -----------------------------
-        # Main output
-        # -----------------------------
-        logits = self.head(x_aspp)
-
-        # -----------------------------
-        # Auxiliary output (from mid feature)
-        # -----------------------------
-        aux_logits = self.aux_head(feats[-2])  # second deepest layer
-
-        # Upsample to input resolution
-        logits = F.interpolate(logits, size=(H, W), mode="bilinear", align_corners=False)
-        aux_logits = F.interpolate(aux_logits, size=(H, W), mode="bilinear", align_corners=False)
-
-        return logits, aux_logits
+    def forward(self, x):
+        return self.conv(x)
