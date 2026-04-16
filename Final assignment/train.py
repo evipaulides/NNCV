@@ -20,6 +20,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torchmetrics.classification import Dice
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torchvision.datasets import Cityscapes
@@ -122,6 +123,49 @@ class CombinedLoss(nn.Module):
         dice_loss = self.dice(logits, targets)
         return self.ce_weight * ce_loss + self.dice_weight * dice_loss
 
+def fit_ood_statistics(model, dataloader, device, percentile=99):
+    model.eval()
+    features = []
+
+    with torch.no_grad():
+        for images, _ in dataloader:
+            images = images.to(device)
+
+            # encoder only
+            x1 = model.inc(images)
+            x2 = model.down1(x1)
+            x3 = model.down2(x2)
+            x4 = model.down3(x3)
+            x5 = model.down4(x4)
+
+            feat = torch.mean(x5, dim=(2, 3))
+            features.append(feat.cpu())
+
+    features = torch.cat(features, dim=0)   # [N, 512]
+
+    mean = features.mean(dim=0)
+
+    centered = features - mean
+    cov = centered.T @ centered / (features.shape[0] - 1)
+
+    # regularization for numerical stability
+    cov += 1e-4 * torch.eye(cov.shape[0])
+
+    inv_cov = torch.inverse(cov)
+
+    # compute train distances
+    diff = centered
+    left = diff @ inv_cov
+    distances = torch.sum(left * diff, dim=1)
+
+    threshold = torch.quantile(distances, percentile / 100)
+
+    model.feature_mean.copy_(mean.to(device))
+    model.inv_cov.copy_(inv_cov.to(device))
+    model.ood_threshold.copy_(threshold.to(device))
+
+    print(f"OOD threshold fitted: {threshold.item():.4f}")
+
 def main(args):
     # Initialize wandb for logging
     wandb.init(
@@ -199,14 +243,18 @@ def main(args):
     # Define the loss function
     criterion = CombinedLoss(num_classes=19, ignore_index=255, ce_weight=0.5, dice_weight=0.5)
 
+    # Validation metric
+    val_dice = Dice(num_classes=19, average='macro', ignore_index=255).to(device)
+
     # Define the optimizer
     optimizer = AdamW(model.parameters(), lr=args.lr)
 
     # Define the learning rate scheduler
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=8, verbose=True)
+    scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=8, verbose=True)
 
     # Training loop
     best_valid_loss = float('inf')
+    best_valid_dice = 0.0
     current_best_model_path = None
     for epoch in range(args.epochs):
         print(f"Epoch {epoch+1:04}/{args.epochs:04}")
@@ -221,7 +269,7 @@ def main(args):
             labels = labels.long().squeeze(1)  # Remove channel dimension
 
             optimizer.zero_grad()
-            outputs = model(images)
+            outputs, _ = model(images)
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
@@ -234,6 +282,7 @@ def main(args):
             
         # Validation
         model.eval()
+        val_dice.reset()
         with torch.no_grad():
             losses = []
             for i, (images, labels) in enumerate(valid_dataloader):
@@ -243,9 +292,12 @@ def main(args):
 
                 labels = labels.long().squeeze(1)  # Remove channel dimension
 
-                outputs = model(images)
+                outputs, _ = model(images)
                 loss = criterion(outputs, labels)
                 losses.append(loss.item())
+
+                predictions_val = outputs.argmax(dim=1)
+                val_dice.update(predictions_val, labels)
             
                 if i == 0:
                     predictions = outputs.softmax(1).argmax(1)
@@ -268,31 +320,38 @@ def main(args):
                     }, step=(epoch + 1) * len(train_dataloader) - 1)
             
             valid_loss = sum(losses) / len(losses)
-            scheduler.step(valid_loss)
+            valid_dice = val_dice.compute().item()
+            scheduler.step(valid_dice)
 
             wandb.log({
                 "valid_loss": valid_loss,
+                "valid_dice": valid_dice,
                 "learning_rate": scheduler.optimizer.param_groups[0]['lr']
             }, step=(epoch + 1) * len(train_dataloader) - 1)
 
-            if valid_loss < best_valid_loss:
-                best_valid_loss = valid_loss
+            #if valid_loss < best_valid_loss:
+                #best_valid_loss = valid_loss
+            if valid_dice > best_valid_dice:
+                best_valid_dice = valid_dice
                 if current_best_model_path:
                     os.remove(current_best_model_path)
                 current_best_model_path = os.path.join(
                     output_dir, 
-                    f"best_model-epoch={epoch:04}-val_loss={valid_loss:04}.pt"
+                    f"best_model-epoch={epoch:04}-val_dice={valid_dice:04}.pt"
                 )
                 torch.save(model.state_dict(), current_best_model_path)
         
     print("Training complete!")
+
+    print("Fitting OOD detection statistics...")
+    fit_ood_statistics(model, train_dataloader, device, percentile=99)
 
     # Save the model
     torch.save(
         model.state_dict(),
         os.path.join(
             output_dir,
-            f"final_model-epoch={epoch:04}-val_loss={valid_loss:04}.pt"
+            f"final_model-epoch={epoch:04}-val_dice={valid_dice:04}.pt"
         )
     )
     wandb.finish()

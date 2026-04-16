@@ -23,10 +23,7 @@ class Model(nn.Module):
             in_channels (int): Number of input channels. Default is 3 for RGB images.
             n_classes (int): Number of output classes. Default is 19 for the Cityscapes dataset.
         """
-        self.register_buffer("feature_mean", torch.zeros(512))
-        self.register_buffer("inv_cov", torch.eye(512))
-        self.register_buffer("ood_threshold", torch.tensor(0.0))
-
+        
         super().__init__()
 
         # Encoding path
@@ -61,8 +58,6 @@ class Model(nn.Module):
         x3 = self.down2(x2)
         x4 = self.down3(x3)
         x5 = self.down4(x4)
-        
-        feat = torch.mean(x5, dim=(2, 3))  # [B, 512]
 
         # Decoding path
         x = self.up1(x5, x4)
@@ -71,20 +66,7 @@ class Model(nn.Module):
         x = self.up4(x, x1)
         logits = self.outc(x)
 
-        dist = self.mahalanobis_distance(feat)
-        is_id = dist < self.ood_threshold
-
-        # If batch size is 1, return Python bool
-        if len(is_id) == 1:
-            is_id = bool(is_id.item())
-
-        return logits, is_id
-
-    def mahalanobis_distance(self, feat):
-        diff = feat - self.feature_mean.unsqueeze(0)
-        left = torch.matmul(diff, self.inv_cov)
-        dist = torch.sum(left * diff, dim=1)
-        return dist
+        return logits
         
 
 class DoubleConv(nn.Module):
