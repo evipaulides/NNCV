@@ -73,18 +73,14 @@ class Model(nn.Module):
         logits = self.outc(x)
 
         dist = self.mahalanobis_distance(feat)
-        is_id = dist < self.ood_threshold
-
-        # If batch size is 1, return Python bool
-        if len(is_id) == 1:
-            is_id = bool(is_id.item())
+        is_id = dist < (0.98*self.ood_threshold)
 
         return logits, is_id
 
     def mahalanobis_distance(self, feat):
         diff = feat - self.feature_mean.unsqueeze(0)
-        left = torch.matmul(diff, self.inv_cov)
-        dist = torch.sum(left * diff, dim=1)
+        left = diff @ self.inv_cov
+        dist = (left * diff).sum(dim=1)
         return dist
         
 
