@@ -23,11 +23,12 @@ class Model(nn.Module):
             in_channels (int): Number of input channels. Default is 3 for RGB images.
             n_classes (int): Number of output classes. Default is 19 for the Cityscapes dataset.
         """
+
+        super().__init__()
+
         self.register_buffer("feature_mean", torch.zeros(512))
         self.register_buffer("inv_cov", torch.eye(512))
         self.register_buffer("ood_threshold", torch.tensor(0.0))
-
-        super().__init__()
 
         # Encoding path
         self.in_channels = in_channels

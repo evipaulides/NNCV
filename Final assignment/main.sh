@@ -1,6 +1,7 @@
 wandb login
 
 # Install timm for this environment
+pip install torchmetrics
 
 python3 train.py \
     --data-dir ./data/cityscapes \
