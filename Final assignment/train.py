@@ -19,6 +19,7 @@ import wandb
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torchvision.datasets import Cityscapes
@@ -108,6 +109,19 @@ class DiceLoss(nn.Module):
 
         return 1 - dice.mean()
 
+class CombinedLoss(nn.Module):
+    def __init__(self, num_classes, ignore_index=255, ce_weight=0.3, dice_weight=0.7):
+        super().__init__()
+        self.ce = nn.CrossEntropyLoss(ignore_index=ignore_index)
+        self.dice = DiceLoss(num_classes, ignore_index)
+        self.ce_weight = ce_weight
+        self.dice_weight = dice_weight
+
+    def forward(self, logits, targets):
+        ce_loss = self.ce(logits, targets)
+        dice_loss = self.dice(logits, targets)
+        return self.ce_weight * ce_loss + self.dice_weight * dice_loss
+
 def main(args):
     # Initialize wandb for logging
     wandb.init(
@@ -132,7 +146,7 @@ def main(args):
     # Define the transforms to apply to the data
     img_transform = Compose([
     ToImage(),
-    Resize((256, 256)),
+    Resize((256, 512)),
     ToDtype(torch.float32, scale=True),
     Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
@@ -140,7 +154,7 @@ def main(args):
     # Target transform (mask)
     target_transform = Compose([
         ToImage(),
-        Resize((256, 256), interpolation=InterpolationMode.NEAREST),
+        Resize((256, 512), interpolation=InterpolationMode.NEAREST),
         ToDtype(torch.int64),  # no scaling
     ])
 
@@ -183,10 +197,13 @@ def main(args):
     ).to(device)
 
     # Define the loss function
-    criterion = DiceLoss(num_classes=19, ignore_index=255)
+    criterion = CombinedLoss(num_classes=19, ignore_index=255, ce_weight=0.5, dice_weight=0.5)
 
     # Define the optimizer
     optimizer = AdamW(model.parameters(), lr=args.lr)
+
+    # Define the learning rate scheduler
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=8, verbose=True)
 
     # Training loop
     best_valid_loss = float('inf')
@@ -211,7 +228,7 @@ def main(args):
 
             wandb.log({
                 "train_loss": loss.item(),
-                "learning_rate": optimizer.param_groups[0]['lr'],
+                #"learning_rate": optimizer.param_groups[0]['lr'],
                 "epoch": epoch + 1,
             }, step=epoch * len(train_dataloader) + i)
             
@@ -251,8 +268,11 @@ def main(args):
                     }, step=(epoch + 1) * len(train_dataloader) - 1)
             
             valid_loss = sum(losses) / len(losses)
+            scheduler.step(valid_loss)
+
             wandb.log({
-                "valid_loss": valid_loss
+                "valid_loss": valid_loss,
+                "learning_rate": scheduler.optimizer.param_groups[0]['lr']
             }, step=(epoch + 1) * len(train_dataloader) - 1)
 
             if valid_loss < best_valid_loss:

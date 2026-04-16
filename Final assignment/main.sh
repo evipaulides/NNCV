@@ -8,4 +8,4 @@ python3 train.py \
     --epochs 200 \
     --num-workers 10 \
     --seed 42 \
-    --experiment-id "unet-dice-loss" \
+    --experiment-id "unet-combined-loss" \
