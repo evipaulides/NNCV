@@ -73,13 +73,15 @@ class Model(nn.Module):
         logits = self.outc(x)
 
         dist = self.mahalanobis_distance(feat)
-        is_id = dist < (1.2*self.ood_threshold)
 
-        return logits, is_id
+        return logits, dist
 
     def mahalanobis_distance(self, feat):
         diff = feat - self.feature_mean.unsqueeze(0)
-        left = diff @ self.inv_cov
+
+        inv_cov = self.inv_cov + 1e-6 * torch.eye(self.inv_cov.shape[0], device=feat.device)  # Add small value for numerical stability
+
+        left = diff @ inv_cov
         dist = (left * diff).sum(dim=1)
         return dist
         

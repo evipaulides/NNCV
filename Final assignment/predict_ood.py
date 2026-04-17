@@ -96,6 +96,10 @@ def main():
             seg_pred, include_decision = model(img_tensor)
             include_decision = bool(include_decision.item())  # Convert to Python bool
 
+            # seg_pred, dist = model(img_tensor)
+            # include_decision = dist < model.ood_threshold 
+            # include_decision = bool(include_decision.item())  # Convert to Python bool
+
             # Postprocess to segmentation mask
             seg_pred = postprocess(seg_pred, original_shape)
 

@@ -39,6 +39,9 @@ from torchvision.transforms.v2 import (
 
 from model import Model
 
+from scipy.stats import genpareto
+import numpy as np
+
 
 # Mapping class IDs to train IDs
 id_to_trainid = {cls.id: cls.train_id for cls in Cityscapes.classes}
@@ -208,13 +211,27 @@ def fit_ood_statistics(model, dataloader, device, percentile=99):
     left = diff @ inv_cov
     distances = torch.sum(left * diff, dim=1)
 
-    threshold = torch.quantile(distances, percentile / 100)
+    distances_np = distances.numpy()
+    u = np.percentile(distances_np, percentile)
+
+    tail = distances_np[distances_np > u] - u
+
+    if len(tail) < 50:
+        print("Self Warning: too few tail samples, EVT may be unstable")
+
+    shape, loc, scale = genpareto.fit(tail, floc=0)
+
+    p = 1 - percentile / 100
+
+    gpd_threshold = genpareto.ppf(p, shape, loc=loc, scale=scale)
+
+    final_threshold = u + gpd_threshold
 
     model.feature_mean.copy_(mean.to(device))
     model.inv_cov.copy_(inv_cov.to(device))
-    model.ood_threshold.copy_(threshold.to(device))
+    model.ood_threshold.copy_(torch.tensor(final_threshold).to(device))
 
-    print(f"OOD threshold fitted: {threshold.item():.4f}")
+    print(f"OOD threshold fitted: {final_threshold:.4f}")
 
 def main(args):
     # Initialize wandb for logging
