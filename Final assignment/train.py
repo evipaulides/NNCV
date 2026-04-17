@@ -20,7 +20,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torchmetrics.classification import Dice
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torchvision.datasets import Cityscapes
@@ -122,6 +121,28 @@ class CombinedLoss(nn.Module):
         ce_loss = self.ce(logits, targets)
         dice_loss = self.dice(logits, targets)
         return self.ce_weight * ce_loss + self.dice_weight * dice_loss
+
+def multiclass_dice_score(preds, targets, num_classes=19, ignore_index=255, smooth=1e-6):
+    """
+    preds: [B, H, W]
+    targets: [B, H, W]
+    """
+    dice_scores = []
+
+    valid_mask = targets != ignore_index
+
+    for cls in range(num_classes):
+        pred_cls = (preds == cls) & valid_mask
+        target_cls = (targets == cls) & valid_mask
+
+        intersection = (pred_cls & target_cls).sum().float()
+        union = pred_cls.sum().float() + target_cls.sum().float()
+
+        dice = (2 * intersection + smooth) / (union + smooth)
+        dice_scores.append(dice)
+
+    return torch.mean(torch.stack(dice_scores))
+
 
 def fit_ood_statistics(model, dataloader, device, percentile=99):
     model.eval()
@@ -243,9 +264,6 @@ def main(args):
     # Define the loss function
     criterion = CombinedLoss(num_classes=19, ignore_index=255, ce_weight=0.5, dice_weight=0.5)
 
-    # Validation metric
-    val_dice = Dice(num_classes=19, average='macro', ignore_index=255).to(device)
-
     # Define the optimizer
     optimizer = AdamW(model.parameters(), lr=args.lr)
 
@@ -282,9 +300,9 @@ def main(args):
             
         # Validation
         model.eval()
-        val_dice.reset()
         with torch.no_grad():
             losses = []
+            dice_scores = []
             for i, (images, labels) in enumerate(valid_dataloader):
 
                 labels = convert_to_train_id(labels)  # Convert class IDs to train IDs
@@ -297,7 +315,8 @@ def main(args):
                 losses.append(loss.item())
 
                 predictions_val = outputs.argmax(dim=1)
-                val_dice.update(predictions_val, labels)
+                batch_dice = multiclass_dice_score(predictions_val, labels)
+                dice_scores.append(batch_dice.item())
             
                 if i == 0:
                     predictions = outputs.softmax(1).argmax(1)
@@ -320,7 +339,7 @@ def main(args):
                     }, step=(epoch + 1) * len(train_dataloader) - 1)
             
             valid_loss = sum(losses) / len(losses)
-            valid_dice = val_dice.compute().item()
+            valid_dice = sum(dice_scores) / len(dice_scores)
             scheduler.step(valid_dice)
 
             wandb.log({
