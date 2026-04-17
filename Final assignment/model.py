@@ -34,9 +34,9 @@ class Model(nn.Module):
         self.in_channels = in_channels
         self.inc = (DoubleConv(in_channels, 64))
         self.down1 = (Down(64, 128))
-        self.down2 = (Down(128, 256))
-        self.down3 = (Down(256, 512))
-        self.down4 = (Down(512, 512))
+        self.down2 = (Down(128, 256, dropout_p=0.1))
+        self.down3 = (Down(256, 512, dropout_p=0.2))
+        self.down4 = (Down(512, 512, dropout_p=0.3))
 
         # Decoding path
         self.up1 = (Up(1024, 256))
@@ -87,7 +87,7 @@ class Model(nn.Module):
 class DoubleConv(nn.Module):
     """(convolution => [BN] => ReLU) * 2"""
 
-    def __init__(self, in_channels, out_channels, mid_channels=None):
+    def __init__(self, in_channels, out_channels, mid_channels=None, dropout=0.0):
         super().__init__()
         if not mid_channels:
             mid_channels = out_channels
@@ -95,6 +95,7 @@ class DoubleConv(nn.Module):
             nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True),
+            nn.Dropout2d(p=dropout),
             nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
@@ -107,11 +108,11 @@ class DoubleConv(nn.Module):
 class Down(nn.Module):
     """Downscaling with maxpool then double conv"""
 
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, dropout_p=0.0):
         super().__init__()
         self.maxpool_conv = nn.Sequential(
             nn.MaxPool2d(2),
-            DoubleConv(in_channels, out_channels)
+            DoubleConv(in_channels, out_channels, dropout_p=dropout_p)
         )
 
     def forward(self, x):

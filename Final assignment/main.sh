@@ -9,4 +9,4 @@ python3 train.py \
     --epochs 150 \
     --num-workers 10 \
     --seed 42 \
-    --experiment-id "unet-augmentation" \
+    --experiment-id "unet-augmentation-drop" \
