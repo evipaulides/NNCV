@@ -73,7 +73,7 @@ class Model(nn.Module):
         logits = self.outc(x)
 
         dist = self.mahalanobis_distance(feat)
-        is_id = dist < (0.98*self.ood_threshold)
+        is_id = dist < (1.2*self.ood_threshold)
 
         return logits, is_id
 

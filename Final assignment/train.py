@@ -363,7 +363,7 @@ def main(args):
     print("Training complete!")
 
     print("Fitting OOD detection statistics...")
-    fit_ood_statistics(model, train_dataloader, device, percentile=99)
+    fit_ood_statistics(model, train_dataloader, device, percentile=95)
 
     # Save the model
     torch.save(
