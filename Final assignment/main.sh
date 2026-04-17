@@ -5,7 +5,7 @@ pip install torchmetrics
 
 python3 train.py \
     --data-dir ./data/cityscapes \
-    --batch-size 128 \
+    --batch-size 64 \
     --epochs 150 \
     --num-workers 10 \
     --seed 42 \

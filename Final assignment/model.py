@@ -32,7 +32,7 @@ class Model(nn.Module):
 
         # Encoding path
         self.in_channels = in_channels
-        self.inc = (DoubleConv(in_channels, 64, dropout=0.0))
+        self.inc = (DoubleConv(in_channels, 64, dropout_p=0.0))
         self.down1 = (Down(64, 128, dropout_p=0.0))
         self.down2 = (Down(128, 256, dropout_p=0.1))
         self.down3 = (Down(256, 512, dropout_p=0.2))
@@ -87,7 +87,7 @@ class Model(nn.Module):
 class DoubleConv(nn.Module):
     """(convolution => [BN] => ReLU) * 2"""
 
-    def __init__(self, in_channels, out_channels, mid_channels=None, dropout=0.0):
+    def __init__(self, in_channels, out_channels, mid_channels=None, dropout_p=0.0):
         super().__init__()
         if not mid_channels:
             mid_channels = out_channels
@@ -95,7 +95,7 @@ class DoubleConv(nn.Module):
             nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True),
-            nn.Dropout2d(p=dropout),
+            nn.Dropout2d(p=dropout_p),
             nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
