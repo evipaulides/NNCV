@@ -16,6 +16,7 @@ import os
 from argparse import ArgumentParser
 
 import wandb
+import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -30,7 +31,10 @@ from torchvision.transforms.v2 import (
     Resize,
     ToImage,
     ToDtype,
-    InterpolationMode
+    InterpolationMode,
+    ColorJitter,
+    GaussianBlur,
+    RandomHorizontalFlip
 )
 
 from model import Model
@@ -70,6 +74,31 @@ def get_args_parser():
     parser.add_argument("--experiment-id", type=str, default="unet-training", help="Experiment ID for Weights & Biases")
 
     return parser
+
+class AugmentedCityscapes(torch.utils.data.Dataset):
+    def __init__(self, base_dataset, img_transform, target_transform):
+        self.dataset = base_dataset
+        self.img_transform = img_transform
+        self.target_transform = target_transform
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        img, target = self.dataset[idx]
+
+        # Decide flip ONCE
+        do_flip = random.random() < 0.5
+
+        # Apply transforms
+        img = self.img_transform(img)
+        target = self.target_transform(target)
+
+        if do_flip:
+            img = torch.flip(img, dims=[2])      # width dim
+            target = torch.flip(target, dims=[2])
+
+        return img, target
 
 class DiceLoss(nn.Module):
     def __init__(self, num_classes, ignore_index=255, smooth=1e-6):
@@ -212,8 +241,19 @@ def main(args):
     img_transform = Compose([
     ToImage(),
     Resize((256, 512)),
+
+    ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.05),
+    GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),
+
     ToDtype(torch.float32, scale=True),
     Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    ])
+
+    img_transform_no_aug = Compose([
+        ToImage(),
+        Resize((256, 512)),
+        ToDtype(torch.float32, scale=True),
+        Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
 
     # Target transform (mask)
@@ -224,13 +264,17 @@ def main(args):
     ])
 
     # Load the dataset and make a split for training and validation
-    train_dataset = Cityscapes(
-    args.data_dir,
-    split="train",
-    mode="fine",
-    target_type="semantic",
-    transform=img_transform,
-    target_transform=target_transform,
+    base_train_dataset = Cityscapes(
+        args.data_dir,
+        split="train",
+        mode="fine",
+        target_type="semantic",
+    )
+
+    train_dataset = augmentedCityscaper(
+        base_train_dataset,
+        img_transform=img_transform,
+        target_transform=target_transform
     )
 
     valid_dataset = Cityscapes(
@@ -238,7 +282,7 @@ def main(args):
         split="val",
         mode="fine",
         target_type="semantic",
-        transform=img_transform,
+        transform=img_transform_no_aug,
         target_transform=target_transform,
     )
 
