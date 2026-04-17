@@ -271,7 +271,7 @@ def main(args):
         target_type="semantic",
     )
 
-    train_dataset = augmentedCityscaper(
+    train_dataset = augmentedCityscapes(
         base_train_dataset,
         img_transform=img_transform,
         target_transform=target_transform
