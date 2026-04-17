@@ -32,8 +32,8 @@ class Model(nn.Module):
 
         # Encoding path
         self.in_channels = in_channels
-        self.inc = (DoubleConv(in_channels, 64))
-        self.down1 = (Down(64, 128))
+        self.inc = (DoubleConv(in_channels, 64, dropout=0.0))
+        self.down1 = (Down(64, 128, dropout_p=0.0))
         self.down2 = (Down(128, 256, dropout_p=0.1))
         self.down3 = (Down(256, 512, dropout_p=0.2))
         self.down4 = (Down(512, 512, dropout_p=0.3))
