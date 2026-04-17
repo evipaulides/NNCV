@@ -25,7 +25,7 @@ RUN pip install --no-cache-dir \
     timm
 
 WORKDIR /app
-COPY predict.py /app/predict_ood.py
+COPY predict_ood.py /app/predict_ood.py
 COPY model.py /app/model.py
 COPY model.pt /app/model.pt
 
