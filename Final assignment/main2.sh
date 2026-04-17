@@ -9,4 +9,4 @@ python3 train2.py \
     --epochs 150 \
     --num-workers 10 \
     --seed 42 \
-    --experiment-id "unet-aug-drop-EVT" \
+    --experiment-id "unet-aug-drop-SVDD" \
