@@ -27,6 +27,6 @@ RUN pip install --no-cache-dir \
 WORKDIR /app
 COPY predict_ood.py /app/predict_ood.py
 COPY model2.py /app/model2.py
-COPY model2.pt /app/model2.pt
+COPY model.pt /app/model.pt
 
 ENTRYPOINT ["python", "/app/predict_ood.py"]
