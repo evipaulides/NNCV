@@ -75,17 +75,17 @@ After setting up the repository, there already is a model, training, prediction 
 #### File locations
 In this repository, there are six folders named `submission-unet-...`. These folders contain the model file, the dockerfile and the prediction file. Depending on what method results you want to reproduce, you use one of the six folder to extract your files from.
 
-#### 1.1. Model prediction and Dockerfile
+#### 1.1. Model, prediction and Dockerfile
 For *Mahalanobis distance* this folder name includes `Mahalanobis`, for the additional *Extreme Value Theory* the folder name includes `EVT` and for the *Support Vector Data Description* the folder name includes `SVDD`.
-For each method, there are two folders. For evaluating the out-of-distribution detection, choose the folder with the name ending in just the method name. For evaluating the performance on the peak performance benchmark, choose the folder with the right method name that is ending with `...-onpeak`.
+For each method, there are two folders. For evaluating the *out-of-distribution detection*, choose the folder with the name ending in just the method name. For evaluating the performance on the *peak performance* benchmark, choose the folder with the right method name that is ending with `...-onpeak`.
 
-After choosing the right folder, replace your existing model, prediction and dockerfile with the folder's `model.py`, `Dockerfile` and prediction file. The prediction file is either `predict.py` or `predict_ood.py` depending on the task.
+After choosing the right folder, replace your existing model, prediction and dockerfile with the folder's `model.py`, `Dockerfile` and prediction file from the folder. The prediction file is either `predict.py` or `predict_ood.py` depending on the task.
 
 #### 1.2. Training: Mahalanobis-based methods
-Both the Mahalanobis distance approach and the Mahalanobis distance + Extreme Value Theory need the `train.py` as given in this repository. This ensures that the distance statistics are saved the correct way.
+Both the Mahalanobis distance approach and the Mahalanobis distance + Extreme Value Theory need the `train.py` as given in this repository. This ensures that the distance statistics are saved the correct way, after training.
 
 #### 1.3. Training: Support Vector Data Description
-The Support Vector Data Description approach needs the `train_SVDD.py` as given in this repository. This ensures that the learned feature representations for the distance statistics are saved the correct way.
+The Support Vector Data Description approach needs the `train_SVDD.py` as given in this repository. This ensures that the learned feature representations for the distance statistics are saved the correct way, after training.
 
 ### 2. Training the model
 After making sure you have correctly replaced all needed documents, you can start training the model. Explaination how to do so can be found in `README-Slurm.md` in this repository.
@@ -93,3 +93,6 @@ After making sure you have correctly replaced all needed documents, you can star
 ### 3. Evaluating the trained model
 After training the model on the training set, the best checkpoint is saved. Using this, the model can be submitted to the submission server. To do so, please follow the intructions given in `README-Submission.md`.
 
+## Contributors
+Evi Paulides <br>
+Neural Networks for Computer Vision (5LSM0)
