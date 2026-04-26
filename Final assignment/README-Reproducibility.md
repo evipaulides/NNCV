@@ -91,8 +91,8 @@ The Support Vector Data Description approach needs the `train_SVDD.py` as given 
 After making sure you have correctly replaced all needed documents, you can start training the model. Explaination how to do so can be found in `README-Slurm.md` in this repository.
 
 ### 3. Evaluating the trained model
-After training the model on the training set, the best checkpoint is saved. Using this, the model can be submitted to the submission server. To do so, please follow the intructions given in `README-Submission.md`.
+After training the model on the training set, the best checkpoint is saved. Using this, the model can be submitted to the submission server. To do so, please follow the intructions given in `README-Submission.md` and make sure to be connected to the TU/e VPN or WiFi network.
 
 ## Contributors
-Evi Paulides <br>
+Evi Paulides, e.paulides@student.tue.nl
 Neural Networks for Computer Vision (5LSM0)
