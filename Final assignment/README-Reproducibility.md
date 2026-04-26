@@ -76,7 +76,7 @@ After setting up the repository, there already is a model, training, prediction 
 In this repository, there are six folders named `submission-unet-...`. These folders contain the model file, the dockerfile and the prediction file. Depending on what method results you want to reproduce, you use one of the six folder to extract your files from.
 
 #### 1.1. Model prediction and Dockerfile
-For Mahalanobis distance this folder name includes `Mahalanobis`, for the additional Extreme Value Theory the folder name includes `EVT` and for the Support Vector Data Description the folder name includes `SVDD`.
+For *Mahalanobis distance* this folder name includes `Mahalanobis`, for the additional *Extreme Value Theory* the folder name includes `EVT` and for the *Support Vector Data Description* the folder name includes `SVDD`.
 For each method, there are two folders. For evaluating the out-of-distribution detection, choose the folder with the name ending in just the method name. For evaluating the performance on the peak performance benchmark, choose the folder with the right method name that is ending with `...-onpeak`.
 
 After choosing the right folder, replace your existing model, prediction and dockerfile with the folder's `model.py`, `Dockerfile` and prediction file. The prediction file is either `predict.py` or `predict_ood.py` depending on the task.
