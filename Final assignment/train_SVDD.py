@@ -37,7 +37,7 @@ from torchvision.transforms.v2 import (
     RandomHorizontalFlip
 )
 
-from model2 import Model
+from model_SVDD import Model
 
 
 # Mapping class IDs to train IDs
@@ -185,7 +185,8 @@ def extract_bottleneck_features(model, images):
     x3 = model.down2(x2)
     x4 = model.down3(x3)
     x5 = model.down4(x4)
-    return torch.mean(x5, dim=(2, 3))  # [B, 512]
+    feat = x5.flatten(2).mean(dim=2)  # [B, 512]
+    return feat
 
 
 def fit_svdd(model, dataloader, device, nu=0.1, n_epochs=10, lr=1e-4, warm_up_epochs=3):
@@ -212,6 +213,12 @@ def fit_svdd(model, dataloader, device, nu=0.1, n_epochs=10, lr=1e-4, warm_up_ep
     c = c.to(device)
     model.svdd_center.copy_(c)
 
+    dist_sq = torch.sum((all_features.to(device) - c) ** 2, dim=1)
+
+    R = torch.quantile(dist_sq, 1 - nu)
+
+    model.svdd_radius.copy_(R.to(device))
+
     # Step 2: Fine-tune encoder with soft-boundary SVDD loss
     encoder_params = (
         list(model.inc.parameters())
@@ -222,42 +229,35 @@ def fit_svdd(model, dataloader, device, nu=0.1, n_epochs=10, lr=1e-4, warm_up_ep
     )
     optimizer = torch.optim.Adam(encoder_params, lr=lr, weight_decay=1e-6)
 
-    R = torch.tensor(0.0, device=device)
+    R = model.svdd_radius
+    c = model.svdd_center
 
     print(f"Fine-tuning encoder with soft-boundary SVDD loss ({n_epochs} epochs)...")
     for epoch in range(n_epochs):
         model.train()
         epoch_loss = 0.0
-        epoch_dists = []
 
         for images, _ in dataloader:
             images = images.to(device)
-            optimizer.zero_grad()
 
             feat = extract_bottleneck_features(model, images)
             dist_sq = torch.sum((feat - c) ** 2, dim=1)
-            epoch_dists.append(dist_sq.detach().cpu())
 
-            scores = dist_sq - R ** 2
-            loss = R ** 2 + (1.0 / nu) * torch.mean(torch.clamp(scores, min=0.0))
+            dist_sq = torch.sum((feat - c) ** 2, dim=1)
+            loss = R + (1.0 / nu) * torch.mean(torch.clamp(dist_sq - R, min=0.0))
+
+            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+
             epoch_loss += loss.item()
-
-        all_dists = torch.cat(epoch_dists)
-
-        # Update R after warm-up phase
-        if epoch >= warm_up_epochs:
-            R.data = torch.tensor(get_svdd_radius(all_dists, nu), device=device)
 
         print(
             f"  SVDD Epoch {epoch + 1:02}/{n_epochs} | "
             f"loss={epoch_loss / len(dataloader):.4f} | "
-            f"R={R.item():.4f} | "
-            f"sqrt(mean_dist)={all_dists.mean().item():.4f}"
+            f"R={R.item():.4f} | c_norm={c.norm().item():.4f}"
         )
 
-    model.svdd_radius.copy_(R)
     print(f"SVDD fitted: center_norm={c.norm().item():.4f}, radius={R.item():.4f}")
 
 def main(args):
@@ -447,6 +447,7 @@ def main(args):
                     output_dir, 
                     f"best_model-epoch={epoch:04}-val_dice={valid_dice:04}.pt"
                 )
+                #fit_svdd(model, train_dataloader, device, nu=0.1, n_epochs=10, lr=1e-4, warm_up_epochs=3)
                 torch.save(model.state_dict(), current_best_model_path)
         
     print("Training complete!")
@@ -462,6 +463,11 @@ def main(args):
             f"final_model-epoch={epoch:04}-val_dice={valid_dice:04}.pt"
         )
     )
+    
+    #save the best model with SVDD fitted
+    model.load_state_dict(torch.load(current_best_model_path))
+    fit_svdd(model, train_dataloader, device, nu=0.1, n_epochs=10, lr=1e-4, warm_up_epochs=3)
+    torch.save(model.state_dict(), current_best_model_path)
     wandb.finish()
 
 

@@ -41,6 +41,8 @@ from model import Model
 
 from scipy.stats import genpareto
 import numpy as np
+import matplotlib.pyplot as plt
+import os
 
 
 # Mapping class IDs to train IDs
@@ -176,62 +178,200 @@ def multiclass_dice_score(preds, targets, num_classes=19, ignore_index=255, smoo
     return torch.mean(torch.stack(dice_scores))
 
 
-def fit_ood_statistics(model, dataloader, device, percentile=99):
+# def fit_ood_statistics(model, dataloader, device, percentile=99):
+#     model.eval()
+#     features = []
+
+#     with torch.no_grad():
+#         for images, _ in dataloader:
+#             images = images.to(device)
+
+#             # encoder only
+#             x1 = model.inc(images)
+#             x2 = model.down1(x1)
+#             x3 = model.down2(x2)
+#             x4 = model.down3(x3)
+#             x5 = model.down4(x4)
+
+#             feat = torch.mean(x5, dim=(2, 3))
+#             features.append(feat.cpu())
+
+#     features = torch.cat(features, dim=0)   # [N, 512]
+
+#     mean = features.mean(dim=0)
+
+#     centered = features - mean
+#     cov = centered.T @ centered / (features.shape[0] - 1)
+
+#     # regularization for numerical stability
+#     cov += 1e-4 * torch.eye(cov.shape[0])
+
+#     inv_cov = torch.inverse(cov)
+
+#     # compute train distances
+#     diff = centered
+#     left = diff @ inv_cov
+#     distances = torch.sum(left * diff, dim=1)
+
+#     distances_np = distances.numpy()
+#     u = np.percentile(distances_np, percentile)
+
+#     tail = distances_np[distances_np > u] - u
+
+#     if len(tail) < 50:
+#         print("Self Warning: too few tail samples, EVT may be unstable")
+
+#     shape, loc, scale = genpareto.fit(tail, floc=0)
+
+#     p = 1 - percentile / 100
+
+#     gpd_threshold = genpareto.ppf(p, shape, loc=loc, scale=scale)
+
+#     final_threshold = u + gpd_threshold
+
+#     model.feature_mean.copy_(mean.to(device))
+#     model.inv_cov.copy_(inv_cov.to(device))
+#     model.ood_threshold.copy_(torch.tensor(final_threshold).to(device))
+
+#     print(f"OOD threshold fitted: {final_threshold:.4f}")
+
+
+def fit_ood_statistics(
+    model,
+    dataloader,
+    device,
+    output_dir,
+    percentile=99
+):
     model.eval()
+
     features = []
 
     with torch.no_grad():
         for images, _ in dataloader:
             images = images.to(device)
 
-            # encoder only
+            # encoder
             x1 = model.inc(images)
             x2 = model.down1(x1)
             x3 = model.down2(x2)
             x4 = model.down3(x3)
             x5 = model.down4(x4)
 
+            # global pooled feature
             feat = torch.mean(x5, dim=(2, 3))
+
             features.append(feat.cpu())
 
-    features = torch.cat(features, dim=0)   # [N, 512]
+    features = torch.cat(features, dim=0)
+
+    print(f"Collected features shape: {features.shape}")
+
+    # =========================
+    # Mean and covariance
+    # =========================
 
     mean = features.mean(dim=0)
 
     centered = features - mean
-    cov = centered.T @ centered / (features.shape[0] - 1)
 
-    # regularization for numerical stability
+    cov = centered.T @ centered
+    cov /= (features.shape[0] - 1)
+
+    # numerical stability
     cov += 1e-4 * torch.eye(cov.shape[0])
 
-    inv_cov = torch.inverse(cov)
+    inv_cov = torch.linalg.pinv(cov)
 
-    # compute train distances
-    diff = centered
-    left = diff @ inv_cov
-    distances = torch.sum(left * diff, dim=1)
+    # =========================
+    # Mahalanobis distances
+    # =========================
+
+    left = centered @ inv_cov
+
+    distances = torch.sum(left * centered, dim=1)
 
     distances_np = distances.numpy()
-    u = np.percentile(distances_np, percentile)
 
-    tail = distances_np[distances_np > u] - u
+    # =========================
+    # Threshold
+    # =========================
 
-    if len(tail) < 50:
-        print("Self Warning: too few tail samples, EVT may be unstable")
+    threshold = np.percentile(distances_np, percentile)
 
-    shape, loc, scale = genpareto.fit(tail, floc=0)
+    print(f"\nOOD threshold ({percentile}th percentile): {threshold:.4f}")
 
-    p = 1 - percentile / 100
+    # useful diagnostics
+    for p in [90, 95, 97, 99, 99.5, 99.9]:
+        val = np.percentile(distances_np, p)
+        print(f"{p:5.1f} percentile: {val:.4f}")
 
-    gpd_threshold = genpareto.ppf(p, shape, loc=loc, scale=scale)
+    # =========================
+    # Save arrays
+    # =========================
 
-    final_threshold = u + gpd_threshold
+    np.save(
+        os.path.join(output_dir, "train_distances.npy"),
+        distances_np
+    )
+
+    # =========================
+    # Plot histogram
+    # =========================
+
+    plt.figure(figsize=(10, 6))
+
+    plt.hist(
+        distances_np,
+        bins=100,
+        density=True,
+        alpha=0.7
+    )
+
+    plt.axvline(
+        threshold,
+        color='red',
+        linestyle='--',
+        linewidth=2,
+        label=f'{percentile}th percentile'
+    )
+
+    plt.xlabel("Mahalanobis Distance")
+    plt.ylabel("Density")
+    plt.title("Training Distance Distribution")
+    plt.legend()
+
+    plot_path = os.path.join(output_dir, "distance_distribution.png")
+
+    plt.savefig(plot_path)
+    plt.close()
+
+    print(f"Saved histogram to: {plot_path}")
+
+    # =========================
+    # Save statistics in model
+    # =========================
 
     model.feature_mean.copy_(mean.to(device))
     model.inv_cov.copy_(inv_cov.to(device))
-    model.ood_threshold.copy_(torch.tensor(final_threshold).to(device))
+    model.ood_threshold.copy_(
+        torch.tensor(threshold).to(device)
+    )
 
-    print(f"OOD threshold fitted: {final_threshold:.4f}")
+    # =========================
+    # WandB logging
+    # =========================
+
+    wandb.log({
+        "ood_threshold": threshold,
+        "distance_mean": distances_np.mean(),
+        "distance_std": distances_np.std(),
+        "distance_max": distances_np.max(),
+        "distance_histogram": wandb.Histogram(distances_np),
+    })
+
+    print("OOD statistics fitted successfully.")
+
 
 def main(args):
     # Initialize wandb for logging
@@ -419,12 +559,20 @@ def main(args):
                     output_dir, 
                     f"best_model-epoch={epoch:04}-val_dice={valid_dice:04}.pt"
                 )
+                print("Fitting OOD detection statistics...")
+                
+                output_dir_ood = os.path.join(output_dir, "ood_statistics")
+                os.makedirs(output_dir_ood, exist_ok=True)
+                fit_ood_statistics(model, train_dataloader, device, output_dir_ood, percentile=97)
+
                 torch.save(model.state_dict(), current_best_model_path)
         
     print("Training complete!")
 
     print("Fitting OOD detection statistics...")
-    fit_ood_statistics(model, train_dataloader, device, percentile=95)
+    output_dir_ood = os.path.join(output_dir, "ood_statistics")
+    os.makedirs(output_dir_ood, exist_ok=True)
+    fit_ood_statistics(model, train_dataloader, device, output_dir_ood, percentile=95)
 
     # Save the model
     torch.save(
