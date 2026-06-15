@@ -63,7 +63,7 @@ class Model(nn.Module):
         x4 = self.down3(x3)
         x5 = self.down4(x4)
         
-        feat = torch.mean(x5, dim=(2, 3))  # [B, 512]
+        feat = x5.flatten(2).mean(dim=2)  # [B, 512]
 
         # Decoding path
         x = self.up1(x5, x4)
@@ -75,7 +75,7 @@ class Model(nn.Module):
         svdd_score = self.svdd_score(feat)
         is_id = svdd_score < 0  # inside hypersphere => in-distribution
 
-        return logits, is_id
+        return logits, svdd_score
 
     def svdd_score(self, feat):
         """Soft-boundary SVDD score: dist² - R². Negative => in-distribution."""
