@@ -4,7 +4,7 @@ Comparing out-of-distribution detection methods using the enhanced U-Net as a fi
 
 This repository contains code to support the submitted report: ***'Comparing OOD Detection Methods for U-Net-based Semantic Segmentation of Cityscapes'***
 
-
+---
 ## Project overview
 
 This project proposes three out-of-distribution detection methods for the Cityscapes data set. The aim is to perform out-of-distribution detection based on the statistical distribution of the training data, rather than manual threshold based.
@@ -22,30 +22,6 @@ The 'Final assignment' folder is structured the following way:
 
 ```bash
 Final assignment/
-├── submission-unet-EVT-onpeak/
-│   ├── Dockerfile
-│   ├── model.py
-│   └── predict.py
-├── submission-unet-EVT/
-│   ├── Dockerfile
-│   ├── model.py
-│   └── predict_ood.py
-├── submission-unet-Mahalanobis-onpeak/
-│   ├── Dockerfile
-│   ├── model.py
-│   └── predict.py
-├── submission-unet-Mahalanobis/
-│   ├── Dockerfile
-│   ├── model.py
-│   └── predict_ood.py
-├── submission-unet-SVDD-onpeak/
-│   ├── Dockerfile
-│   ├── model.py
-│   └── predict.py
-├── submission-unet-SVDD/
-│   ├── Dockerfile
-│   ├── model.py
-│   └── predict_ood.py
 ├── README-Installation.md
 ├── README-Reproducibility.md
 ├── README-Slurm.md
@@ -53,15 +29,22 @@ Final assignment/
 ├── download_docker_and_data.sh
 ├── jobscript_slurm.sh
 ├── main.sh
+├── evaluation_slurm.sh
+├── run_eval.sh
 ├── Dockerfile
 ├── model.py
+├── model_SVDD.py
+├── train_mahal.py
+├── train_EVT.py
+├── train_SVDD.py
+├── evaluate_ood.py
+├── evaluate_ood_SVDD.py
 ├── predict.py
 ├── predict_ood.py
-├── train.py
-└── train_SVDD.py
+└── predict_ood_SVDD.py
 
 ```
-
+---
 ## Getting started
 
 ### 0. Installation
@@ -70,27 +53,22 @@ To get started, follow the instructions from `README-Installation.md`
 ### 1. File setup
 In order to reproduce the results of the report, it is crucial that the right training, model, prediction and dockerfile are used.
 
-After setting up the repository, there already is a model, training, prediction and dockerfile present. These should be **replaced** with the right files from this repository. Depending on what results you want to reproduce, determine what files should be used.
+After setting up the repository, there already are model, training, prediction and dockerfiles present. And, there are already bashfiles present which are needed to be able to run the code. Depending on what results you want to reproduce, change the `main.sh` to call the right training code.
+- For example: `train_mahal.py`, `train_EVT.py` or `strain_SVDD.py`
 
-#### File locations
-In this repository, there are six folders named `submission-unet-...`. These folders contain the model file, the dockerfile and the prediction file. Depending on what method results you want to reproduce, you use one of the six folder to extract your files from.
+The second bashfile to adjust is `run_eval.sh`. In this file, you should change the evaluation code that is being called to the corresponding file as well as the trained model weights after `--model-path`.
+- For example: `evaluate_ood.py` for mahal and EVT and `evaluate_ood_svdd.py` for SVDD.
 
-#### 1.1. Model, prediction and Dockerfile
-For *Mahalanobis distance* this folder name includes `Mahalanobis`, for the additional *Extreme Value Theory* the folder name includes `EVT` and for the *Support Vector Data Description* the folder name includes `SVDD`.
-For each method, there are two folders. For evaluating the *out-of-distribution detection*, choose the folder with the name ending in just the method name. For evaluating the performance on the *peak performance* benchmark, choose the folder with the right method name that is ending with `...-onpeak`.
-
-After choosing the right folder, replace your existing model, prediction and dockerfile with the folder's `model.py`, `Dockerfile` and prediction file from the folder. The prediction file is either `predict.py` or `predict_ood.py` depending on the task.
-
-#### 1.2. Training: Mahalanobis-based methods
-Both the Mahalanobis distance approach and the Mahalanobis distance + Extreme Value Theory need the `train.py` as given in this repository. This ensures that the distance statistics are saved the correct way, after training.
-
-#### 1.3. Training: Support Vector Data Description
-The Support Vector Data Description approach needs the `train_SVDD.py` as given in this repository. This ensures that the learned feature representations for the distance statistics are saved the correct way, after training.
+Lastly, to be able to compare the encoded feature distances with OOD samples, you can download a pseudo OOD dataset (such as CIFAR-10 data). Make sure to check the filepaths to this data in the evaluation code. 
 
 ### 2. Training the model
 After making sure you have correctly replaced all needed documents, you can start training the model. Explaination how to do so can be found in `README-Slurm.md` in this repository.
 
-### 3. Evaluating the trained model
+### 3. Evaluating the fitted statistics
+In order to check the encoded feature space with the OOD data, run `run_eval.sh` to create plots with the encoded distances on the x-axis and the frequency on the y-axis. This way, it can be checked if the threshold falls within the two distributions.
+- If this threshold does not work, the percentile based thresholding can be adjusted in the training code.
+
+### 4. Submitting the trained model
 After training the model on the training set, the best checkpoint is saved. Using this, the model can be submitted to the submission server. To do so, please follow the intructions given in `README-Submission.md` and make sure to be connected to the TU/e VPN or WiFi network.
 
 ## Contributors
